@@ -234,7 +234,7 @@ def calculate_durations_from_words(segments: list, word_data: list, total_audio_
                 tempos_de_transicao.append(start_time)
 
                 # Atualiza o índice para a próxima busca começar daqui
-                current_word_idx = j
+                current_word_idx = j + 1
                 match_found = True
                 break
 
