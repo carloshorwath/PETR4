@@ -1,23 +1,11 @@
 import json
 import requests
 from pathlib import Path
-from openai import OpenAI
-import google.generativeai as genai
 from config import Config
 
 class LLMService:
-    def __init__(self):
-        # Initialize OpenRouter client only if key is available
-        if Config.OPENROUTER_API_KEY:
-            self.client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=Config.OPENROUTER_API_KEY,
-            )
-        else:
-            self.client = None
-
     def generate_script(self, story_topic: str, images_count: int) -> str:
-        # Priority: n8n Webhook
+        # 1. Try n8n Webhook
         if Config.N8N_SCRIPT_WEBHOOK_URL:
             try:
                 payload = {
@@ -28,26 +16,17 @@ class LLMService:
                 response.raise_for_status()
                 data = response.json()
 
-                # Check for "script" key as per n8n JSON response node
                 if "script" in data:
                     return data["script"]
-                # Sometimes n8n might return the full item list
                 if isinstance(data, list) and len(data) > 0 and "script" in data[0]:
                     return data[0]["script"]
-
-                # If structure is different, dump it for debugging or return raw text
                 return response.text
-
             except Exception as e:
-                # If webhook fails, try fallback if client is available, otherwise raise
-                if self.client:
-                    print(f"Webhook failed ({e}), falling back to direct API...")
-                else:
-                    raise Exception(f"Webhook failed and no OpenRouter Key provided: {e}")
+                print(f"Script Webhook failed: {e}. Trying fallback...")
 
-        # Fallback: Direct API Call
-        if not self.client:
-            raise ValueError("Neither N8N_SCRIPT_WEBHOOK_URL nor OPENROUTER_API_KEY is configured.")
+        # 2. Fallback: Direct API (OpenRouter/OpenAI compatible) via requests
+        if not Config.OPENROUTER_API_KEY:
+             raise ValueError("Neither N8N_SCRIPT_WEBHOOK_URL nor OPENROUTER_API_KEY is configured.")
 
         prompt = f"""Reconte a história bíblica de **{story_topic}**.
 
@@ -73,20 +52,43 @@ A narrativa deve ser solene, inspiradora e acessível. Use uma linguagem que sej
 **IMPORTANTE:**
 Sua resposta deve ser um texto único, contendo apenas a história com os marcadores inseridos."""
 
-        response = self.client.chat.completions.create(
-            model=Config.LLM_MODEL,
-            messages=[
+        headers = {
+            "Authorization": f"Bearer {Config.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        # OpenRouter requires Referer/Title for rankings, but it's optional
+
+        data = {
+            "model": Config.LLM_MODEL,
+            "messages": [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ]
-        )
-        return response.choices[0].message.content
+        }
+
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+        response.raise_for_status()
+        return response.json()['choices'][0]['message']['content']
+
 
     def generate_prompts(self, segmented_script: str) -> list:
-        # TODO: Implement n8n webhook for prompts if available
+        # 1. Try n8n Webhook
+        if Config.N8N_PROMPTS_WEBHOOK_URL:
+            try:
+                payload = {"script_segmented": segmented_script}
+                response = requests.post(Config.N8N_PROMPTS_WEBHOOK_URL, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                if "image_prompts" in data:
+                    return data["image_prompts"]
+                if isinstance(data, list) and len(data) > 0 and "image_prompts" in data[0]:
+                    return data[0]["image_prompts"]
+            except Exception as e:
+                print(f"Prompts Webhook failed: {e}. Trying fallback...")
 
-        if not self.client:
-             raise ValueError("OPENROUTER_API_KEY is required for direct prompt generation (no webhook configured yet).")
+        # 2. Fallback: Direct API
+        if not Config.OPENROUTER_API_KEY:
+             raise ValueError("OPENROUTER_API_KEY is required for direct prompt generation (no webhook configured).")
 
         prompt = f"""**TAREFA PRINCIPAL**
 Sua missão é ser um Diretor de Arte e Cineasta. O roteiro abaixo já foi dividido em cenas numeradas. Sua tarefa é criar um prompt de imagem cinematográfico para **CADA CENA NUMERADA**.
@@ -115,44 +117,67 @@ Roteiro Segmentado:
 """
         system_message = "Você é um Diretor de Arte e Diretor de Fotografia para projetos de IA, especializado em iconografia religiosa e arte sacra. Você segue as instruções do usuário de forma rigorosa, prestando atenção especial ao formato de saída JSON solicitado."
 
-        response = self.client.chat.completions.create(
-            model=Config.LLM_MODEL,
-            messages=[
+        headers = {
+            "Authorization": f"Bearer {Config.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        data = {
+            "model": Config.LLM_MODEL,
+            "messages": [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"}
-        )
+            "response_format": {"type": "json_object"}
+        }
 
-        content = response.choices[0].message.content
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+        response.raise_for_status()
+        content = response.json()['choices'][0]['message']['content']
+
         try:
             parsed = json.loads(content)
             return parsed.get("image_prompts", [])
         except json.JSONDecodeError:
-            # Fallback cleanup attempt
             cleaned = content.replace("```json\n", "").replace("\n```", "")
             return json.loads(cleaned).get("image_prompts", [])
 
 
 class TTSService:
-    def __init__(self):
-        # Check if OpenAI Key exists, otherwise client is None
-        if Config.OPENAI_API_KEY:
-            self.client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        else:
-            self.client = None
-
     def generate_audio(self, text: str, output_path: Path):
-        # TODO: Add webhook support
-        if not self.client:
+        # 1. Try n8n Webhook
+        if Config.N8N_TTS_WEBHOOK_URL:
+            try:
+                payload = {"text": text}
+                # Expecting binary audio response
+                response = requests.post(Config.N8N_TTS_WEBHOOK_URL, json=payload, stream=True)
+                response.raise_for_status()
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                return output_path
+            except Exception as e:
+                print(f"TTS Webhook failed: {e}. Trying fallback...")
+
+        # 2. Fallback: OpenAI Direct
+        if not Config.OPENAI_API_KEY:
              raise ValueError("OPENAI_API_KEY is required for TTS (no webhook configured).")
 
-        response = self.client.audio.speech.create(
-            model=Config.TTS_MODEL,
-            voice=Config.TTS_VOICE,
-            input=text
-        )
-        response.stream_to_file(output_path)
+        headers = {
+            "Authorization": f"Bearer {Config.OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": Config.TTS_MODEL,
+            "voice": Config.TTS_VOICE,
+            "input": text
+        }
+
+        response = requests.post("https://api.openai.com/v1/audio/speech", headers=headers, json=data, stream=True)
+        response.raise_for_status()
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
         return output_path
 
 
@@ -161,10 +186,13 @@ class STTService:
         self.url = Config.SPEACHES_URL
 
     def transcribe(self, audio_path: Path) -> str:
-        # Check if we should use local speaches or OpenAI whisper
-        if "api.openai.com" in self.url:
-             # Implementation for OpenAI API directly if needed, but keeping consistent with n8n flow which uses a custom endpoint usually
-             pass
+        # Check if local speeches is available or fallback to OpenAI
+        # We can implement a webhook for this too if user wants, but standard is Speaches URL
+
+        # 1. Try n8n Webhook (Optional new feature)
+        # Not implementing specific N8N webhook for STT unless requested,
+        # as standard STT is usually a file upload which is complex with json webhooks.
+        # But let's assume Speaches URL *IS* the webhook or local service.
 
         with open(audio_path, "rb") as f:
             files = {"file": (audio_path.name, f, "audio/mpeg")}
@@ -173,64 +201,73 @@ class STTService:
                 "response_format": "srt"
             }
             try:
+                # Try Local/Configured URL
                 response = requests.post(self.url, files=files, data=data)
                 response.raise_for_status()
                 return response.text
-            except requests.exceptions.ConnectionError:
-                 # Fallback to OpenAI if local fails (optional, good for user experience)
-                 if not Config.OPENAI_API_KEY:
-                     raise ValueError("Speaches (local) unreachable and OPENAI_API_KEY not set.")
+            except Exception as e:
+                print(f"STT Service at {self.url} failed: {e}. Trying OpenAI Fallback...")
 
-                 client = OpenAI(api_key=Config.OPENAI_API_KEY)
-                 with open(audio_path, "rb") as audio_file:
-                    transcription = client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=audio_file,
-                        response_format="srt"
-                    )
-                    return transcription
+                 # Fallback to OpenAI API
+                if not Config.OPENAI_API_KEY:
+                     raise ValueError("Speaches unreachable and OPENAI_API_KEY not set.")
+
+                # We need to re-open the file because the pointer is at the end
+                f.seek(0)
+
+                headers = {
+                    "Authorization": f"Bearer {Config.OPENAI_API_KEY}"
+                }
+                # Note: 'files' parameter in requests handles multipart/form-data content-type automatically
+                data_openai = {"model": "whisper-1", "response_format": "srt"}
+
+                response = requests.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers=headers,
+                    files={"file": (audio_path.name, f, "audio/mpeg")},
+                    data=data_openai
+                )
+                response.raise_for_status()
+                return response.text
 
 
 class ImageGenService:
-    def __init__(self):
-        pass
-
     def generate_image_openai(self, prompt: str, output_path: Path):
-        if not Config.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY is required for Image Gen.")
+        # 1. Try n8n Webhook
+        if Config.N8N_IMAGE_WEBHOOK_URL:
+            try:
+                payload = {"prompt": prompt}
+                # Expecting binary image response
+                response = requests.post(Config.N8N_IMAGE_WEBHOOK_URL, json=payload, stream=True)
+                response.raise_for_status()
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                return output_path
+            except Exception as e:
+                print(f"Image Webhook failed: {e}. Trying fallback...")
 
-        client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        response = client.images.generate(
-            model=Config.IMAGE_MODEL_OPENAI,
-            prompt=f"{prompt}, 16:9 aspect ratio",
-            size="1024x1024", # DALL-E 2 standard
-            quality="standard",
-            n=1,
-        )
-        image_url = response.data[0].url
+        # 2. Fallback: OpenAI DALL-E
+        if not Config.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is required for Image Gen (no webhook).")
+
+        headers = {
+            "Authorization": f"Bearer {Config.OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": Config.IMAGE_MODEL_OPENAI,
+            "prompt": f"{prompt}, 16:9 aspect ratio",
+            "size": "1024x1024",
+            "quality": "standard",
+            "n": 1
+        }
+
+        response = requests.post("https://api.openai.com/v1/images/generations", headers=headers, json=data)
+        response.raise_for_status()
+
+        image_url = response.json()['data'][0]['url']
         img_data = requests.get(image_url).content
         with open(output_path, 'wb') as handler:
             handler.write(img_data)
         return output_path
-
-    def generate_image_google(self, prompt: str, output_path: Path):
-        # Configure Google GenAI
-        if not Config.GOOGLE_API_KEY:
-             raise ValueError("GOOGLE_API_KEY is required for Google Image Gen.")
-
-        genai.configure(api_key=Config.GOOGLE_API_KEY)
-
-        # This is a placeholder for the actual Imagen model call via Gemini API
-        # The specific model name and method might vary as Google updates the API
-        # Assuming we use a model that supports image generation
-        try:
-             # Note: As of my knowledge cutoff, generic gemini-pro doesn't do image gen directly via this python lib in the same way.
-             # Use requests if the library support is experimental.
-             # However, let's try the library way if available or fallback to OpenAI.
-             # For now, I'll implement a fallback to OpenAI if Google fails or is not configured.
-
-             # If using Vertex AI or specific endpoint:
-             pass
-        except Exception as e:
-            print(f"Google Image Gen failed: {e}. Falling back to OpenAI or skipping.")
-            raise e

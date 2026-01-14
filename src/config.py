@@ -8,8 +8,11 @@ load_dotenv()
 class Config:
     # n8n Webhooks
     N8N_SCRIPT_WEBHOOK_URL = os.getenv("N8N_SCRIPT_WEBHOOK_URL")
+    N8N_TTS_WEBHOOK_URL = os.getenv("N8N_TTS_WEBHOOK_URL")
+    N8N_PROMPTS_WEBHOOK_URL = os.getenv("N8N_PROMPTS_WEBHOOK_URL")
+    N8N_IMAGE_WEBHOOK_URL = os.getenv("N8N_IMAGE_WEBHOOK_URL")
 
-    # API Keys (Optional if using Webhooks)
+    # API Keys (Fallback / Optional)
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -38,14 +41,20 @@ class Config:
     @staticmethod
     def validate():
         missing = []
-        # If we don't have the webhook, we need the OpenRouter Key
-        if not Config.N8N_SCRIPT_WEBHOOK_URL and not Config.OPENROUTER_API_KEY:
-            missing.append("N8N_SCRIPT_WEBHOOK_URL or OPENROUTER_API_KEY")
+        # Logic: For each service, we need EITHER a webhook OR an API Key.
 
-        # For other services not yet on webhook (TTS, Image), we still need keys
-        if not Config.OPENAI_API_KEY:
-             missing.append("OPENAI_API_KEY")
+        # Script
+        if not Config.N8N_SCRIPT_WEBHOOK_URL and not Config.OPENROUTER_API_KEY:
+            missing.append("Script: Missing N8N_SCRIPT_WEBHOOK_URL or OPENROUTER_API_KEY")
+
+        # TTS
+        if not Config.N8N_TTS_WEBHOOK_URL and not Config.OPENAI_API_KEY:
+            missing.append("TTS: Missing N8N_TTS_WEBHOOK_URL or OPENAI_API_KEY")
+
+        # Images
+        if not Config.N8N_IMAGE_WEBHOOK_URL and not Config.OPENAI_API_KEY:
+            missing.append("Images: Missing N8N_IMAGE_WEBHOOK_URL or OPENAI_API_KEY")
 
         if missing:
-            return False, f"Missing environment variables: {', '.join(missing)}"
+            return False, f"Configuration Missing: {'; '.join(missing)}"
         return True, "Configuration OK"
