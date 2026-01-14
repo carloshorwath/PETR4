@@ -6,7 +6,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    # API Keys
+    # n8n Webhooks
+    N8N_SCRIPT_WEBHOOK_URL = os.getenv("N8N_SCRIPT_WEBHOOK_URL")
+
+    # API Keys (Optional if using Webhooks)
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -35,13 +38,13 @@ class Config:
     @staticmethod
     def validate():
         missing = []
+        # If we don't have the webhook, we need the OpenRouter Key
+        if not Config.N8N_SCRIPT_WEBHOOK_URL and not Config.OPENROUTER_API_KEY:
+            missing.append("N8N_SCRIPT_WEBHOOK_URL or OPENROUTER_API_KEY")
+
+        # For other services not yet on webhook (TTS, Image), we still need keys
         if not Config.OPENAI_API_KEY:
-            missing.append("OPENAI_API_KEY")
-        if not Config.OPENROUTER_API_KEY:
-            missing.append("OPENROUTER_API_KEY")
-        # Google Key is optional if user chooses OpenAI for images, but let's list it
-        if not Config.GOOGLE_API_KEY:
-            pass # make it optional for now or warn
+             missing.append("OPENAI_API_KEY")
 
         if missing:
             return False, f"Missing environment variables: {', '.join(missing)}"

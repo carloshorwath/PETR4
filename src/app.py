@@ -40,6 +40,12 @@ def init_services():
 try:
     services = init_services()
     st.sidebar.success("Services Initialized")
+
+    if Config.N8N_SCRIPT_WEBHOOK_URL:
+        st.sidebar.info("Using n8n Webhook for Script")
+    else:
+        st.sidebar.warning("Using Local API Keys for Script")
+
 except Exception as e:
     st.sidebar.error(f"Error initializing services: {e}")
     st.stop()

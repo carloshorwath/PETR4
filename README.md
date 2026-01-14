@@ -3,7 +3,7 @@
 This project is a Python application that replicates the n8n workflow for generating Bible stories with AI narration and images.
 
 ## Features
-- **Story Generation**: Uses LLMs (OpenRouter) to write script.
+- **Story Generation**: Uses LLMs (OpenRouter) to write script (Direct or via n8n Webhook).
 - **Audio**: Uses OpenAI TTS.
 - **Transcriptions**: Uses Speaches (or OpenAI Whisper) for SRT generation.
 - **Image Generation**: Uses OpenAI DALL-E (or Google Gemini).
@@ -20,11 +20,22 @@ This project is a Python application that replicates the n8n workflow for genera
     Ensure `ffmpeg` and `ffprobe` are installed and in your system PATH.
 
 3.  **Environment Variables**:
-    Create a `.env` file in the root directory with the following keys:
+    Create a `.env` file in the root directory.
+
+    **Option A: Using n8n Webhook (Recommended)**
     ```ini
-    OPENAI_API_KEY=sk-...
+    N8N_SCRIPT_WEBHOOK_URL=http://localhost:5678/webhook/generate-script
+    OPENAI_API_KEY=sk-... (Still needed for TTS/Images)
+    ```
+
+    **Option B: Standalone (Direct API)**
+    ```ini
     OPENROUTER_API_KEY=sk-...
-    # Optional
+    OPENAI_API_KEY=sk-...
+    ```
+
+    **Optional**:
+    ```ini
     GOOGLE_API_KEY=...
     SPEACHES_URL=http://localhost:8000/v1/audio/transcriptions
     ```
