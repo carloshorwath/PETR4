@@ -1,5 +1,21 @@
-import streamlit as st
+import sys
 import os
+
+# Auto-launch with Streamlit if run directly with python
+if __name__ == "__main__":
+    try:
+        from streamlit.web import cli as stcli
+    except ImportError:
+        try:
+            import streamlit.cli as stcli
+        except ImportError:
+            print("Could not import streamlit. Please install it with: pip install streamlit")
+            sys.exit(1)
+
+    sys.argv = ["streamlit", "run", sys.argv[0]]
+    sys.exit(stcli.main())
+
+import streamlit as st
 from pathlib import Path
 import json
 
