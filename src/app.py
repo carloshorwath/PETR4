@@ -290,9 +290,11 @@ elif st.session_state.step == 3:
                         segmented_text = "\n\n".join([f"{i+1}. {s}" for i, s in enumerate(segments)])
 
                         prompts_list = services["llm"].generate_prompts(segmented_text)
+
+                        # 1. Salva na memória (já tem isso)
                         st.session_state.prompts = prompts_list
 
-                        # Salva no ARQUIVO (para não perder se fechar)
+                        # 2. ADICIONE ISTO: Salva no ARQUIVO para não perder
                         prompts_path = project_dir / "prompts.json"
                         with open(prompts_path, "w", encoding="utf-8") as f:
                             json.dump(prompts_list, f, indent=4, ensure_ascii=False)
