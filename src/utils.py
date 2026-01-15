@@ -265,11 +265,18 @@ def calculate_durations_from_words(segments: list, word_data: list, total_audio_
 
 def setup_logger(project_slug: str) -> logging.Logger:
     """Configura logger para o projeto"""
+    logger_name = f"bible_video_{project_slug}"
+
+    # Se o logger já existe, retornar ele
+    if logger_name in logging.Logger.manager.loggerDict:
+        return logging.getLogger(logger_name)
+
     log_dir = Config.get_project_dir(project_slug) / "logs"
     log_dir.mkdir(exist_ok=True)
 
-    logger = logging.getLogger(f"bible_video_{project_slug}")
+    logger = logging.getLogger(logger_name)
     logger.setLevel(logging.DEBUG)
+    logger.propagate = False
 
     # Check if handlers already exist to avoid duplication
     if not logger.handlers:

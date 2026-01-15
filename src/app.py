@@ -392,6 +392,8 @@ elif st.session_state.step == 3:
 
         prompts_path = project_dir / "prompts.json"
 
+        generate_prompts_logic = False
+
         if prompts_path.exists():
             st.info("✅ Prompts já encontrados neste projeto.")
             col_skip, col_regen = st.columns([1, 1])
@@ -406,13 +408,9 @@ elif st.session_state.step == 3:
             with col_regen:
                 if st.button("Gerar Novos Prompts (Sobrescrever)"):
                     generate_prompts_logic = True
-                else:
-                    generate_prompts_logic = False
         else:
             if st.button("Gerar Prompts de Imagem ➡"):
                 generate_prompts_logic = True
-            else:
-                generate_prompts_logic = False
 
         if generate_prompts_logic:
             with st.spinner("Criando descrições visuais para as cenas..."):
@@ -451,29 +449,46 @@ elif st.session_state.step == 4:
     st.title("Passo 4: Produção & Renderização")
     render_progress_indicator()
 
+    project_dir = Config.get_project_dir(st.session_state.project_slug)
+
     # Botão de Voltar com Confirmação
+    if "confirm_back" not in st.session_state:
+        st.session_state.confirm_back = False
+
     col_back, col_space = st.columns([1, 3])
     with col_back:
-        if st.button("⬅ Voltar", type="secondary"):
-            # Verifica se há imagens geradas
-            project_dir = Config.get_project_dir(st.session_state.project_slug) # Ensure project_dir is defined
-            has_images = st.session_state.images_data or (project_dir / "prompts.json").exists()
+        has_images = st.session_state.images_data or (project_dir / "prompts.json").exists()
 
+        # Se já confirmou, voltar diretamente
+        if st.session_state.confirm_back:
+            prev_step()
+            st.session_state.confirm_back = False
+            st.rerun()
+
+        # Primeiro clique: mostrar aviso se houver imagens
+        if st.button("⬅ Voltar", type="secondary"):
             if has_images:
-                st.warning("⚠️ Imagens e prompts serão mantidos. Deseja voltar?")
-                col_confirm, col_cancel = st.columns(2)
-                with col_confirm:
-                    if st.button("✅ Sim, voltar"):
-                        prev_step()
-                        st.rerun()
-                with col_cancel:
-                    if st.button("❌ Cancelar"):
-                        st.rerun()
+                st.session_state.confirm_back = True
+                st.rerun()
             else:
                 prev_step()
                 st.rerun()
 
-    project_dir = Config.get_project_dir(st.session_state.project_slug)
+    # Mostrar aviso de confirmação SE necessário
+    if st.session_state.confirm_back:
+        st.warning("⚠️ Imagens e prompts serão mantidos. Deseja voltar?")
+        col_confirm, col_cancel = st.columns(2)
+
+        with col_confirm:
+            if st.button("✅ Sim, voltar"):
+                st.session_state.confirm_back = False
+                prev_step()
+                st.rerun()
+
+        with col_cancel:
+            if st.button("❌ Cancelar"):
+                st.session_state.confirm_back = False
+                st.rerun()
 
     # --- RECUPERAÇÃO DE ESTADO ---
     if not st.session_state.prompts:
