@@ -1,0 +1,6 @@
+streamlit==1.32.0
+requests==2.31.0
+python-dotenv==1.0.1
+Pillow
+# openai package removed (using raw requests)
+# google-generativeai removed (using raw requests if needed, currently OpenAI fallback only implemented)
